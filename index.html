@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Meeting Assistant 🎙️</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a2e;
+            color: #e94560;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: #16213e;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            width: 90%;
+            max-width: 600px;
+            text-align: center;
+        }
+        h1 { color: #fff; margin-bottom: 20px; }
+        
+        .tabs { display: flex; justify-content: center; margin-bottom: 20px; }
+        .tab-btn {
+            background: none; border: none; color: #aaa;
+            padding: 10px 20px; cursor: pointer; font-size: 16px;
+            border-bottom: 2px solid transparent;
+        }
+        .tab-btn.active { color: #e94560; border-bottom: 2px solid #e94560; }
+        
+        .section { display: none; animation: fadeIn 0.5s; }
+        .section.active { display: block; }
+        
+        .btn {
+            background-color: #e94560; color: white; border: none;
+            padding: 12px 25px; border-radius: 50px; cursor: pointer;
+            font-size: 16px; margin-top: 15px; transition: 0.3s;
+        }
+        .btn:hover { transform: scale(1.05); }
+        .btn:disabled { background-color: #555; cursor: not-allowed; }
+        
+        .result-box {
+            margin-top: 20px; padding: 15px;
+            background-color: #0f3460; border-radius: 10px;
+            color: #fff; text-align: left; white-space: pre-line;
+            min-height: 100px; border: 1px solid #e94560;
+        }
+        
+        #translateBtn { display: none; background-color: #4CAF50; margin-top: 10px; }
+        
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>AI Meeting Lead 🎙️</h1>
+    
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('record')">Record Audio</button>
+        <button class="tab-btn" onclick="showTab('upload')">Upload File</button>
+    </div>
+
+    <div id="record" class="section active">
+        <p style="color:#ccc">Click Start, speak, then Stop.</p>
+        <button id="startBtn" class="btn" onclick="startRecording()">🎤 Start Recording</button>
+        <button id="stopBtn" class="btn" style="background-color: #dc3545; display:none;" onclick="stopRecording()">⏹️ Stop & Process</button>
+    </div>
+
+    <div id="upload" class="section">
+        <p style="color:#ccc">Upload an MP3 or WAV file.</p>
+        <input type="file" id="audioFile" accept="audio/*" style="color:white; margin-bottom:10px;">
+        <br>
+        <button class="btn" onclick="uploadFile()">📤 Upload & Process</button>
+    </div>
+
+    <h3 style="color:#fff; margin-top:30px;">Summary (Bullet Points):</h3>
+    <div id="output" class="result-box">Waiting for input...</div>
+    
+    <button id="translateBtn" class="btn" onclick="translateResult()">🌍 Translate to Arabic</button>
+</div>
+
+<script>
+    let mediaRecorder;
+    let audioChunks = [];
+    let currentSummary = ""; // عشان نخزن التلخيص ونبعته للترجمة
+
+    function showTab(tabName) {
+        document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        document.getElementById(tabName).classList.add('active');
+        event.target.classList.add('active');
+    }
+
+    // --- Logic التسجيل ---
+    async function startRecording() {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+        
+        mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+            sendToBackend(audioBlob, "recording.wav");
+        };
+
+        mediaRecorder.start();
+        document.getElementById("startBtn").style.display = "none";
+        document.getElementById("stopBtn").style.display = "inline-block";
+        document.getElementById("output").innerText = "Recording...";
+    }
+
+    function stopRecording() {
+        mediaRecorder.stop();
+        document.getElementById("startBtn").style.display = "inline-block";
+        document.getElementById("stopBtn").style.display = "none";
+        document.getElementById("output").innerText = "Processing audio... (This may take a minute)";
+    }
+
+    // --- Logic الرفع ---
+    function uploadFile() {
+        const fileInput = document.getElementById('audioFile');
+        if(fileInput.files.length === 0) { alert("Please select a file!"); return; }
+        document.getElementById("output").innerText = "Uploading & Processing...";
+        sendToBackend(fileInput.files[0], fileInput.files[0].name);
+    }
+
+    // --- دالة الإرسال للسيرفر (Backend) ---
+    async function sendToBackend(fileObj, fileName) {
+        const formData = new FormData();
+        formData.append("file", fileObj, fileName);
+
+        try {
+            const response = await fetch("/process-audio", {
+                method: "POST",
+                body: formData
+            });
+            const data = await response.json();
+            
+            // عرض النتيجة
+            currentSummary = data.message; // تخزين النتيجة عشان الترجمة
+            document.getElementById("output").innerText = currentSummary;
+            
+            // إظهار زرار الترجمة
+            document.getElementById("translateBtn").style.display = "inline-block";
+            
+        } catch (error) {
+            document.getElementById("output").innerText = "Error: " + error;
+        }
+    }
+
+    // --- Logic الترجمة (الزرار المنفصل) ---
+    async function translateResult() {
+        if (!currentSummary) return;
+        
+        document.getElementById("output").innerText = "Translating...";
+        
+        try {
+            const response = await fetch("/translate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: currentSummary })
+            });
+            const data = await response.json();
+            document.getElementById("output").innerText = data.translated_message;
+            // نخفي زرار الترجمة خلاص
+            document.getElementById("translateBtn").style.display = "none";
+        } catch (error) {
+            document.getElementById("output").innerText = "Translation Error";
+        }
+    }
+</script>
+
+</body>
+</html>
